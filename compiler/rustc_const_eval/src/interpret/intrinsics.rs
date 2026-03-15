@@ -1043,8 +1043,9 @@ impl<'tcx, M: Machine<'tcx>> InterpCx<'tcx, M> {
     {
         let x: F = arg.to_scalar().to_float()?;
         match name {
+            // bitwise, no NaN adjustments
             sym::fabs => interp_ok(x.abs().into()),
-            _ => bug!("not a float intrinsic: {}", name),
+            _ => bug!("not a unary float intrinsic: {}", name),
         }
     }
 

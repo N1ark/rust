@@ -3389,8 +3389,7 @@ pub const fn maximumf128(x: f128, y: f128) -> f128 {
 /// Returns the absolute value of a floating-point value.
 ///
 /// The stabilized versions of this intrinsic are available on the float
-/// primitives via the `abs` method. For example,
-/// [`f32::abs`]
+/// primitives via the `abs` method. For example, [`f32::abs`].
 #[rustc_nounwind]
 #[rustc_intrinsic_const_stable_indirect]
 #[rustc_intrinsic]
