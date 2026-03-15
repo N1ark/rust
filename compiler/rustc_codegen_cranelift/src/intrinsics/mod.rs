@@ -1172,16 +1172,17 @@ fn codegen_regular_intrinsic_call<'tcx>(
 
         sym::fabs => {
             intrinsic_args!(fx, args => (arg); intrinsic);
-            let x = arg.load_scalar(fx);
-
             let layout = arg.layout();
-            let val = match layout.ty.kind() {
-                ty::Float(FloatTy::F32) | ty::Float(FloatTy::F64) => fx.bcx.ins().fabs(x),
+            let ty::Float(float_ty) = layout.ty.kind() else {
+                bug!("expected float type for fabs intrinsic: {:?}", layout.ty);
+            };
+            let x = arg.load_scalar(fx);
+            let val = match float_ty {
+                FloatTy::F32 | FloatTy::F64 => fx.bcx.ins().fabs(x),
                 // FIXME(bytecodealliance/wasmtime#8312): Use `fabsf16` once Cranelift
                 // backend lowerings are implemented.
-                ty::Float(FloatTy::F16) => codegen_f16_f128::abs_f16(fx, x),
-                ty::Float(FloatTy::F128) => codegen_f16_f128::abs_f128(fx, x),
-                _ => bug!("expected float type for fabs intrinsic: {:?}", layout.ty),
+                FloatTy::F16 => codegen_f16_f128::abs_f16(fx, x),
+                FloatTy::F128 => codegen_f16_f128::abs_f128(fx, x),
             };
             let val = CValue::by_val(val, layout);
             ret.write_cvalue(fx, val);

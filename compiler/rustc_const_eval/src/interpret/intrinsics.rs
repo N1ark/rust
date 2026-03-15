@@ -576,27 +576,19 @@ impl<'tcx, M: Machine<'tcx>> InterpCx<'tcx, M> {
             sym::copysignf128 => self.float_copysign_intrinsic::<Quad>(args, dest)?,
 
             sym::fabs => {
-                let ty = instance_args.type_at(0);
-                let layout = self.layout_of(ty)?;
-                let arg = self.read_scalar(&args[0])?;
-                let out_val = match layout.ty.kind() {
-                    ty::Float(FloatTy::F16) => {
-                        self.unop_float_intrinsic::<Half>(intrinsic_name, arg)?
-                    }
-                    ty::Float(FloatTy::F32) => {
-                        self.unop_float_intrinsic::<Single>(intrinsic_name, arg)?
-                    }
-                    ty::Float(FloatTy::F64) => {
-                        self.unop_float_intrinsic::<Double>(intrinsic_name, arg)?
-                    }
-                    ty::Float(FloatTy::F128) => {
-                        self.unop_float_intrinsic::<Quad>(intrinsic_name, arg)?
-                    }
-                    _ => span_bug!(
+                let arg = self.read_immediate(&args[0])?;
+                let ty::Float(float_ty) = arg.layout.ty.kind() else {
+                    span_bug!(
                         self.cur_span(),
-                        "non-float type for float intrinsic {}",
-                        layout.ty,
-                    ),
+                        "non-float type for float intrinsic: {}",
+                        arg.layout.ty,
+                    );
+                };
+                let out_val = match float_ty {
+                    FloatTy::F16 => self.unop_float_intrinsic::<Half>(intrinsic_name, arg)?,
+                    FloatTy::F32 => self.unop_float_intrinsic::<Single>(intrinsic_name, arg)?,
+                    FloatTy::F64 => self.unop_float_intrinsic::<Double>(intrinsic_name, arg)?,
+                    FloatTy::F128 => self.unop_float_intrinsic::<Quad>(intrinsic_name, arg)?,
                 };
                 self.write_scalar(out_val, dest)?;
             }
@@ -1044,12 +1036,12 @@ impl<'tcx, M: Machine<'tcx>> InterpCx<'tcx, M> {
     fn unop_float_intrinsic<F>(
         &self,
         name: Symbol,
-        arg: Scalar<M::Provenance>,
+        arg: ImmTy<'tcx, M::Provenance>,
     ) -> InterpResult<'tcx, Scalar<M::Provenance>>
     where
         F: rustc_apfloat::Float + rustc_apfloat::FloatConvert<F> + Into<Scalar<M::Provenance>>,
     {
-        let x: F = arg.to_float()?;
+        let x: F = arg.to_scalar().to_float()?;
         match name {
             sym::fabs => interp_ok(x.abs().into()),
             _ => bug!("not a float intrinsic: {}", name),

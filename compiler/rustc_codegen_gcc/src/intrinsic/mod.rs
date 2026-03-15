@@ -486,24 +486,21 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
                 }
             }
             sym::fabs => 'fabs: {
-                let func = match *args[0].layout.ty.kind() {
-                    ty::Float(ty::FloatTy::F16) => break 'fabs f16_builtin(self, name, args),
-                    ty::Float(ty::FloatTy::F32) => self.context.get_builtin_function("fabsf"),
-                    ty::Float(ty::FloatTy::F64) => self.context.get_builtin_function("fabs"),
-                    ty::Float(ty::FloatTy::F128) => match get_simple_function_f128(self, name) {
+                let ty = args[0].layout.ty;
+                let ty::Float(float_ty) = ty.kind() else {
+                    tcx.dcx().emit_err(InvalidMonomorphization::BasicFloatType { span, name, ty });
+                    return Ok(());
+                };
+                let func = match float_ty {
+                    ty::FloatTy::F16 => break 'fabs f16_builtin(self, name, args),
+                    ty::FloatTy::F32 => self.context.get_builtin_function("fabsf"),
+                    ty::FloatTy::F64 => self.context.get_builtin_function("fabs"),
+                    ty::FloatTy::F128 => match get_simple_function_f128(self, name) {
                         Some(func) => func,
                         None => {
                             return Err(Instance::new_raw(instance.def_id(), instance.args));
                         }
                     },
-                    _ => {
-                        tcx.dcx().emit_err(InvalidMonomorphization::BasicFloatType {
-                            span,
-                            name,
-                            ty: args[0].layout.ty,
-                        });
-                        return Ok(());
-                    }
                 };
                 self.cx.context.new_call(
                     self.location,
