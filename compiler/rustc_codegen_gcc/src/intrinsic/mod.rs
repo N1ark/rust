@@ -194,11 +194,7 @@ fn get_simple_function<'gcc, 'tcx>(
 fn get_simple_function_f128<'gcc, 'tcx>(
     cx: &CodegenCx<'gcc, 'tcx>,
     name: Symbol,
-) -> Option<Function<'gcc>> {
-    if !cx.supports_f128_type {
-        return None;
-    }
-
+) -> Function<'gcc> {
     let f128_type = cx.type_f128();
     let func_name = match name {
         sym::ceilf128 => "ceilf128",
@@ -208,32 +204,28 @@ fn get_simple_function_f128<'gcc, 'tcx>(
         sym::roundf128 => "roundf128",
         sym::round_ties_even_f128 => "roundevenf128",
         sym::sqrtf128 => "sqrtf128",
-        _ => return None,
+        _ => unreachable!(),
     };
-    Some(cx.context.new_function(
+    cx.context.new_function(
         None,
         FunctionType::Extern,
         f128_type,
         &[cx.context.new_parameter(None, f128_type, "a")],
         func_name,
         false,
-    ))
+    )
 }
 
 fn get_simple_function_f128_2args<'gcc, 'tcx>(
     cx: &CodegenCx<'gcc, 'tcx>,
     name: Symbol,
-) -> Option<Function<'gcc>> {
-    if !cx.supports_f128_type {
-        return None;
-    }
-
+) -> Function<'gcc> {
     let f128_type = cx.type_f128();
     let func_name = match name {
         sym::copysignf128 => "copysignf128",
-        _ => return None,
+        _ => unreachable!(),
     };
-    Some(cx.context.new_function(
+    cx.context.new_function(
         None,
         FunctionType::Extern,
         f128_type,
@@ -243,7 +235,7 @@ fn get_simple_function_f128_2args<'gcc, 'tcx>(
         ],
         func_name,
         false,
-    ))
+    )
 }
 
 fn f16_builtin<'gcc, 'tcx>(
@@ -295,11 +287,7 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
         let fn_args = instance.args;
 
         let simple = get_simple_intrinsic(self, name);
-        // TODO(antoyo): Only call get_simple_function_f128 and get_simple_function_f128_2args when
-        // it is the symbols for the supported f128 builtins.
-        let simple_func = get_simple_function(self, name)
-            .or_else(|| get_simple_function_f128(self, name))
-            .or_else(|| get_simple_function_f128_2args(self, name));
+        let simple_func = get_simple_function(self, name);
 
         let value = match name {
             _ if simple.is_some() => {
@@ -328,6 +316,29 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
             | sym::round_ties_even_f16
             | sym::sqrtf16
             | sym::truncf16 => f16_builtin(self, name, args),
+            sym::ceilf128
+            | sym::floorf128
+            | sym::truncf128
+            | sym::roundf128
+            | sym::round_ties_even_f128
+            | sym::sqrtf128
+                if self.cx.supports_f128_type =>
+            {
+                let func = get_simple_function_f128(self, name);
+                self.cx.context.new_call(
+                    self.location,
+                    func,
+                    &args.iter().map(|arg| arg.immediate()).collect::<Vec<_>>(),
+                )
+            }
+            sym::maxnumf128 | sym::minnumf128 | sym::copysignf128 if self.cx.supports_f128_type => {
+                let func = get_simple_function_f128_2args(self, name);
+                self.cx.context.new_call(
+                    self.location,
+                    func,
+                    &args.iter().map(|arg| arg.immediate()).collect::<Vec<_>>(),
+                )
+            }
             sym::fmaf128 => {
                 let f128_type = self.cx.type_f128();
                 let func = self.cx.context.new_function(
@@ -487,7 +498,7 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
             }
             sym::fabs => 'fabs: {
                 let ty = args[0].layout.ty;
-                let ty::Float(float_ty) = ty.kind() else {
+                let ty::Float(float_ty) = *ty.kind() else {
                     tcx.dcx().emit_err(InvalidMonomorphization::BasicFloatType { span, name, ty });
                     return Ok(());
                 };
@@ -495,12 +506,7 @@ impl<'a, 'gcc, 'tcx> IntrinsicCallBuilderMethods<'tcx> for Builder<'a, 'gcc, 'tc
                     ty::FloatTy::F16 => break 'fabs f16_builtin(self, name, args),
                     ty::FloatTy::F32 => self.context.get_builtin_function("fabsf"),
                     ty::FloatTy::F64 => self.context.get_builtin_function("fabs"),
-                    ty::FloatTy::F128 => match get_simple_function_f128(self, name) {
-                        Some(func) => func,
-                        None => {
-                            return Err(Instance::new_raw(instance.def_id(), instance.args));
-                        }
-                    },
+                    ty::FloatTy::F128 => get_simple_function_f128(self, name),
                 };
                 self.cx.context.new_call(
                     self.location,
